@@ -1,3 +1,3 @@
 #!/bin/sh
-rm num*dat
+#rm num*dat
 time ../numerical/solver.exe

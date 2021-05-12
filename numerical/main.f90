@@ -17,11 +17,11 @@
 
       !$ call omp_set_num_threads(4)
 
-      call drive_fa
+      call drive
 
       contains
 
-      subroutine drive_fa
+      subroutine drive
 
         use global
         !$ use omp_lib, only: omp_set_num_threads
@@ -34,40 +34,59 @@
         integer(4),    parameter     :: kmax=10000000
         real(kind=kr)                :: c
         real(kind=kr)                :: h
+        real(kind=kr)                :: eps
+        real(4)                      :: start 
+        real(4)                      :: finish
 
         !$ call omp_set_num_threads(n/2)
 
+        ! Run Problem 1 with coarse mesh
+        call cpu_time(start)
         problem=1
-        do sol=0,1
-          c=1.0_kr
+        c=1.0_kr
+        eps=1.0e-08
+        do sol=0,2
           jmax=5
           h=1.0_kr
-          call solve_slab_fa(sol,c,n,kmax,jmax,h)
+          call solve_slab(sol,c,n,kmax,jmax,h,eps)
         enddo
-        do sol=0,1
-          c=1.0_kr
-          jmax=500
-          h=0.01_kr
-          call solve_slab_fa(sol,c,n,kmax,jmax,h)
-        enddo
+        call cpu_time(finish)
+        write (0,'(a,f6.3,a)') ' Problem 1 run time ',(finish-start)/60.0,' (sec).'
 
+        ! Run Problem 1 with fine mesh and DD (reference)
+        call cpu_time(start)
+        eps=1.0e-06
+        jmax=10000
+        h=0.0005_kr
+        call solve_slab(2,c,n,kmax,jmax,h,eps)
+        call cpu_time(finish)
+        write (0,'(a,f10.3,a)') ' Reference 1 run time ',(finish-start)/60.0,' (sec).'
+
+        ! Run Problem 1 with coarse mesh
+        call cpu_time(start)
         problem=2
-        do sol=0,1
-          c=1.0_kr
+        c=1.0_kr
+        eps=1.0e-08
+        do sol=0,2
           jmax=20
           h=1.0_kr
-          call solve_slab_fa(sol,c,n,kmax,jmax,h)
+          call solve_slab(sol,c,n,kmax,jmax,h,eps)
         enddo
-        do sol=0,1
-          c=1.0_kr
-          jmax=2000
-          h=0.01_kr
-          call solve_slab_fa(sol,c,n,kmax,jmax,h)
-        enddo
+        call cpu_time(finish)
+        write (0,'(a,f6.3,a)') ' Problem 2 run time ',(finish-start)/60.0,' (sec).'
 
-      end subroutine drive_fa
+        ! Run Problem 2 with fine mesh and DD (reference)
+        call cpu_time(start)
+        eps=1.0e-06
+        jmax=10000
+        h=0.002_kr
+        call solve_slab(2,c,n,kmax,jmax,h,eps)
+        call cpu_time(finish)
+        write (0,'(a,f10.3,a)') ' Reference 1 run time ',(finish-start)/60.0,' (sec).'
 
-      subroutine solve_slab_fa(sol,c,n,kmax,jmax,h)
+      end subroutine drive
+
+      subroutine solve_slab(sol,c,n,kmax,jmax,h,eps)
 
         use global
 
@@ -79,28 +98,23 @@
         integer(4),    intent(in)    :: jmax
         real(kind=kr), intent(in)    :: c
         real(kind=kr), intent(in)    :: h
+        real(kind=kr), intent(in)    :: eps
 
         integer(4)                   :: j
         integer(4)                   :: bc(2)
-        real(kind=kr)                :: eps
         real(kind=kr)                :: mu(n/2)
         real(kind=kr)                :: w (n/2)
         real(kind=kr), allocatable   :: phi (:)
         real(kind=kr), allocatable   :: phi_l(:)
         real(kind=kr), allocatable   :: phi_r(:)
-        real(kind=kr), allocatable   :: jnet(:)
-        real(kind=kr), allocatable   :: jp(:)
-        real(kind=kr), allocatable   :: jpi(:)
-        real(kind=kr), allocatable   :: jm(:)
-        real(kind=kr), allocatable   :: jmi(:)
         real(kind=kr)                :: q
         real(kind=kr)                :: sigt
         real(kind=kr)                :: sigs
         character(1)                 :: prob
-        character(2)                 :: solopt(0:1)=(/'LD','LC'/)
-        character(4)                 :: cells
-        character(15)                :: caserun
-        character(20)                :: datafile
+        character(2)                 :: solopt(0:2)=(/'LD','LC','DD'/)
+        character(6)                 :: cells
+        character(20)                :: caserun
+        character(30)                :: datafile
         character(132)               :: datfmt
 
       ! dynamic allocation of arrays
@@ -108,19 +122,9 @@
         allocate(phi(jmax))
         allocate(phi_l(jmax))
         allocate(phi_r(jmax))
-        allocate(jnet(jmax+1))
-        allocate(jp(jmax+1))
-        allocate(jpi(jmax))
-        allocate(jm(jmax+1))
-        allocate(jmi(jmax))
         phi=0.0_kr
         phi_l=0.0_kr
         phi_r=0.0_kr
-        jnet=0.0_kr
-        jp=0.0_kr
-        jpi=0.0_kr
-        jm=0.0_kr
-        jmi=0.0_kr
 
       ! build source based on options
 
@@ -145,12 +149,12 @@
 
       ! solve fixed-source problem
 
-        eps=1.0e-06
-        eps=1.0e-01
         if (sol == 0) then
-          call solve_ld(n,jmax,kmax,h,q,eps,sigt,sigs,mu,w,bc,phi,phi_l,phi_r,jnet,jp,jpi,jm,jmi)
+          call solve_ld(n,jmax,kmax,h,q,eps,sigt,sigs,mu,w,bc,phi,phi_l,phi_r)
         elseif (sol == 1) then
-          call solve_lc(n,jmax,kmax,h,q,eps,sigt,sigs,mu,w,bc,phi,phi_l,phi_r,jnet,jp,jpi,jm,jmi)
+          call solve_lc(n,jmax,kmax,h,q,eps,sigt,sigs,mu,w,bc,phi,phi_l,phi_r)
+        elseif (sol == 2) then
+          call solve_dd(n,jmax,kmax,h,q,eps,sigt,sigs,mu,w,bc,phi,phi_l,phi_r)
         else
           write(0,'(a)') ' Incorrect solution scheme selected.'
           stop
@@ -160,7 +164,7 @@
 
         datfmt='(2(es12.5))'
         write(prob,'(i1)') problem
-        write(cells,'(i4)') jmax
+        write(cells,'(i6)') jmax
         write(caserun,'(a)') '-p' // prob // '-' // trim(adjustl(cells)) // '-' // solopt(sol)
         write(datafile,'(a)') 'numave' // trim(adjustl(caserun)) // '.dat'
         open(unit=1,file=datafile,action='write',status='unknown')
@@ -181,13 +185,8 @@
         deallocate(phi)
         deallocate(phi_l)
         deallocate(phi_r)
-        deallocate(jnet)
-        deallocate(jp)
-        deallocate(jpi)
-        deallocate(jm)
-        deallocate(jmi)
 
-      end subroutine solve_slab_fa
+      end subroutine solve_slab
 
       subroutine quad(n,mu,w)
 
@@ -289,7 +288,7 @@
 
       end subroutine gauleg
 
-      subroutine solve_ld(n,jmax,kmax,h,q,eps,sigt,sigs,mu,w,bc,phi,phi_l,phi_r,jnet,jp,jpi,jm,jmi)
+      subroutine solve_dd(n,jmax,kmax,h,q,eps,sigt,sigs,mu,w,bc,phi,phi_l,phi_r)
 
         use global
 
@@ -309,11 +308,123 @@
         real(kind=kr), intent(inout) :: phi (jmax)
         real(kind=kr), intent(inout) :: phi_l(jmax)
         real(kind=kr), intent(inout) :: phi_r(jmax)
-        real(kind=kr), intent(inout) :: jnet(jmax+1)
-        real(kind=kr), intent(inout) :: jp(jmax+1)
-        real(kind=kr), intent(inout) :: jpi(jmax)
-        real(kind=kr), intent(inout) :: jm(jmax+1)
-        real(kind=kr), intent(inout) :: jmi(jmax)
+
+        integer(4)                   :: j
+        integer(4)                   :: k
+        integer(4)                   :: kount
+        integer(4)                   :: m
+        real(kind=kr)                :: tau
+        real(kind=kr)                :: norm1
+        real(kind=kr)                :: psi
+        real(kind=kr)                :: psi_in
+        real(kind=kr)                :: psi_bc(n/2)
+        real(kind=kr), allocatable   :: c1(:,:)
+        real(kind=kr), allocatable   :: c2(:,:)
+        real(kind=kr), allocatable   :: phio(:)
+        real(kind=kr), allocatable   :: phil(:)
+        real(kind=kr), allocatable   :: s(:)
+
+      ! pre-compute coeffs
+
+        allocate(c1(jmax,n/2))
+        allocate(c2(jmax,n/2))
+        c1=0.0_kr
+        c2=0.0_kr
+
+        do m=1,n/2
+          do j=1,jmax
+            tau=sigt*h/mu(m)
+            c1(j,m)=0.5_kr*tau
+            c2(j,m)=0.5_kr*h/mu(m)
+          enddo
+        enddo
+
+      ! solve problem
+
+        allocate(phil(jmax))
+        allocate(s(jmax))
+        phi =1.0_kr
+        phil=0.0_kr
+
+        psi_in=0.0_kr
+        psi_bc=0.0_kr
+        kount=0
+
+        allocate(phio(jmax))
+        do k=1,kmax
+          phio=phi
+          do j=1,jmax
+            if (problem == 1) then
+              s(j)=0.5_kr*(sigs*phi(j)+q)
+            elseif (problem == 2) then
+              if (h*(j-0.5_kr) > 10.0_kr) then
+                s(j)=0.5_kr*(sigs*phi(j))
+              else
+                s(j)=0.5_kr*(0.9_kr*sigs*phi(j)+q)
+              endif
+            endif
+          enddo
+          phi  =0.0_kr
+          phi_l=0.0_kr
+          phi_r=0.0_kr
+          !$omp parallel do private(j,psi_in,psi) reduction(+:phi,phi_l,phi_r)
+          do m=1,n/2
+            psi_in=psi_bc(m) ! left specular bc
+            if (bc(1) == 0) psi_in=0.0_kr
+            do j=1,jmax
+              phi_l(j)=phi_l(j)+psi_in*w(m)
+              psi     =(s(j)*c2(j,m)+psi_in)/(1.0_kr+c1(j,m))
+              phi(j)  =phi(j)+psi*w(m)
+              psi_in  =2.0_kr*psi-psi_in
+            enddo
+            phi_r(jmax)=phi_r(jmax)+2.0_kr*psi_in*w(m)
+            if (bc(2) == 0) psi_in=0.0_kr
+            do j=jmax,1,-1
+              psi     =(s(j)*c2(j,m)+psi_in)/(1.0_kr+c1(j,m))
+              phi(j)  =phi(j)+psi*w(m)
+              psi_in  =2.0_kr*psi-psi_in
+              phi_l(j)=phi_l(j)+psi_in*w(m)
+            enddo
+            psi_bc(m)=psi_in
+          enddo
+          !$omp end parallel do
+
+          norm1=0.0_kr
+          do j=1,jmax
+            norm1=norm1+(phi(j)-phio(j))**2
+          enddo
+          norm1=sqrt(norm1)
+          if (norm1 <= eps) exit 
+        enddo
+
+        deallocate(c1)
+        deallocate(c2)
+        deallocate(s)
+        deallocate(phio)
+        deallocate(phil)
+
+      end subroutine solve_dd
+
+      subroutine solve_ld(n,jmax,kmax,h,q,eps,sigt,sigs,mu,w,bc,phi,phi_l,phi_r)
+
+        use global
+
+        implicit none
+
+        integer(4),    intent(in)    :: n
+        integer(4),    intent(in)    :: jmax
+        integer(4),    intent(in)    :: kmax
+        integer(4),    intent(in)    :: bc(2)
+        real(kind=kr), intent(in)    :: h
+        real(kind=kr), intent(in)    :: q
+        real(kind=kr), intent(in)    :: eps
+        real(kind=kr), intent(in)    :: sigt
+        real(kind=kr), intent(in)    :: sigs
+        real(kind=kr), intent(in)    :: mu(n/2)
+        real(kind=kr), intent(in)    :: w (n/2)
+        real(kind=kr), intent(inout) :: phi (jmax)
+        real(kind=kr), intent(inout) :: phi_l(jmax)
+        real(kind=kr), intent(inout) :: phi_r(jmax)
 
         integer(4)                   :: j
         integer(4)                   :: k
@@ -389,28 +500,19 @@
           enddo
           phi=0.0_kr
           phil=0.0_kr
-          jnet=0.0_kr
-          jp=0.0_kr
-          jpi=0.0_kr
-          jm=0.0_kr
-          jmi=0.0_kr
-          !$omp parallel do private(j,psi_in,psi_out,psi,psil) reduction(+:phi,phil,jp,jpi,jm,jmi)
+          !$omp parallel do private(j,psi_in,psi_out,psi,psil) reduction(+:phi,phil)
           do m=1,n/2
             psi_in=psi_bc(m) ! left specular bc
             if (bc(1) == 0) psi_in=0.0_kr
             do j=1,jmax
-              jp(j)  =jp(j)+psi_in*mu(m)*w(m)
               psi_out=c2(j,m)*(2.0_kr*(s(j)+alpha(j,m)*sl(j))/sigt+c1(j,m)*psi_in)
               psi    =((1.0_kr+alpha(j,m))*psi_out+(1.0_kr-alpha(j,m))*psi_in)/2.0_kr-alpha(j,m)*sl(j)/sigt
               psil   =psi_out-psi
               psi_in =psi_out
               phi(j) =phi(j)+psi*w(m)
               phil(j)=phil(j)+psil*w(m)
-              jpi(j) =jpi(j)+psi*mu(m)*w(m)
             enddo
-            jp(jmax+1)=jp(jmax+1)+psi_in*mu(m)*w(m)
             if (bc(2) == 0) psi_in=0.0_kr
-            jm(jmax+1)=jm(jmax+1)+psi_in*mu(m)*w(m)
             do j=jmax,1,-1
               psi_out=c2(j,m)*(2.0_kr*(s(j)-alpha(j,m)*sl(j))/sigt+c1(j,m)*psi_in)
               psi    =((1.0_kr+alpha(j,m))*psi_out+(1.0_kr-alpha(j,m))*psi_in)/2.0_kr+alpha(j,m)*sl(j)/sigt
@@ -418,13 +520,10 @@
               psi_in =psi_out
               phi(j) =phi(j)+psi*w(m)
               phil(j)=phil(j)+psil*w(m)
-              jm(j)  =jm(j)+psi_in*mu(m)*w(m)
-              jmi(j) =jmi(j)+psi*mu(m)*w(m)
             enddo
             psi_bc(m)=psi_in
           enddo
           !$omp end parallel do
-          jnet=jp-jm
           phi_l=phi-phil
           phi_r=phi+phil
 
@@ -447,7 +546,7 @@
 
       end subroutine solve_ld
 
-      subroutine solve_lc(n,jmax,kmax,h,q,eps,sigt,sigs,mu,w,bc,phi,phi_l,phi_r,jnet,jp,jpi,jm,jmi)
+      subroutine solve_lc(n,jmax,kmax,h,q,eps,sigt,sigs,mu,w,bc,phi,phi_l,phi_r)
 
         use global
 
@@ -467,11 +566,6 @@
         real(kind=kr), intent(inout) :: phi (jmax)
         real(kind=kr), intent(inout) :: phi_l(jmax)
         real(kind=kr), intent(inout) :: phi_r(jmax)
-        real(kind=kr), intent(inout) :: jnet(jmax+1)
-        real(kind=kr), intent(inout) :: jp(jmax+1)
-        real(kind=kr), intent(inout) :: jpi(jmax)
-        real(kind=kr), intent(inout) :: jm(jmax+1)
-        real(kind=kr), intent(inout) :: jmi(jmax)
 
         integer(4)                   :: j
         integer(4)                   :: k
@@ -561,28 +655,19 @@
           enddo
           phi=0.0_kr
           phil=0.0_kr
-          jnet=0.0_kr
-          jp=0.0_kr
-          jpi=0.0_kr
-          jm=0.0_kr
-          jmi=0.0_kr
-          !$omp parallel do private(j,psi_in,psi_out,psi,psil) reduction(+:phi,phil,jp,jpi,jm,jmi)
+          !$omp parallel do private(j,psi_in,psi_out,psi,psil) reduction(+:phi,phil)
           do m=1,n/2
             psi_in=psi_bc(m) ! left specular bc
             if (bc(1) == 0) psi_in=0.0_kr
             do j=1,jmax
-              jp(j)  =jp(j)+psi_in*mu(m)*w(m)
               psi_out=c2(j,m)*(2.0_kr*(s(j)+alpha(j,m)*sl(j))/sigt+c1(j,m)*psi_in)
               psi    =((1.0_kr+alpha(j,m))*psi_out+(1.0_kr-alpha(j,m))*psi_in)/2.0_kr-alpha(j,m)*sl(j)/sigt
               psil   =((rbeta(j,m)+1.0_kr)*psi_out+(rbeta(j,m)-1.0_kr)*psi_in)/2.0_kr-rbeta(j,m)*psi
               psi_in =psi_out
               phi(j) =phi(j)+psi*w(m)
               phil(j)=phil(j)+psil*w(m)
-              jpi(j) =jpi(j)+psi*mu(m)*w(m)
             enddo
-            jp(jmax+1)=jp(jmax+1)+psi_in*mu(m)*w(m)
             if (bc(2) == 0) psi_in=0.0_kr
-            jm(jmax+1)=jm(jmax+1)+psi_in*mu(m)*w(m)
             do j=jmax,1,-1
               psi_out=c2(j,m)*(2.0_kr*(s(j)-alpha(j,m)*sl(j))/sigt+c1(j,m)*psi_in)
               psi    =((1.0_kr+alpha(j,m))*psi_out+(1.0_kr-alpha(j,m))*psi_in)/2.0_kr+alpha(j,m)*sl(j)/sigt
@@ -590,13 +675,10 @@
               psi_in =psi_out
               phi(j) =phi(j)+psi*w(m)
               phil(j)=phil(j)+psil*w(m)
-              jm(j)  =jm(j)+psi_in*mu(m)*w(m)
-              jmi(j) =jmi(j)+psi*mu(m)*w(m)
             enddo
             psi_bc(m)=psi_in
           enddo
           !$omp end parallel do
-          jnet=jp-jm
           phi_l=phi-phil
           phi_r=phi+phil
 
